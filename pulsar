@@ -1,0 +1,66 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:          Pulsar
+# Required-Start:    $remote_fs $syslog $network
+# Required-Stop:     $remote_fs $syslog $network
+# Default-Start:     2 3 4
+# Default-Stop:      0 1 6
+# Short-Description: Start Pulsar at boot time
+# Description:       Start Pulsar realtime audio
+#                    beat detection service. Pulsar
+#                    uses JACK, Aubio and a2jmidi
+#                    to send determine the BPM of
+#                    an audio input and generate a
+#                    MIDI clock which is sent to
+#                    the MIDI through device.
+### END INIT INFO
+
+# This is the Pulsar system service
+
+NAME=pulsar
+
+start() {
+  screen -S pulsar-jackd -dm jackd -d alsa -C hw:1,0 -P hw:1,0
+  sleep 2
+  screen -S pulsar-a2jmidid -dm a2jmidid -u
+  sleep 2
+  screen -S pulsar-aubio aubiotrack -vjm
+  sleep 2
+  jack_connect system:capture_1 aubio:in_1
+  jack_connect aubio:midi_out_1 "a2j:Midi Through (playback): Midi Through Port-0"
+  jack_connect aubio:out_1 system:playback_8
+}
+
+stop() {
+  screen -S pulsar-aubio -X quit
+  screen -S pulsar-a2jmidid -X quit
+  screen -S pulsar-jackd -X quit
+}
+
+force-stop() {
+  # Just to be thorough in case multiple instances have been started by mistake
+  for session in $(screen -ls | grep -o '[0-9]*\.pulsar'); do
+    screen -S "${session}" -X quit
+  done
+}
+
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  restart)
+    stop
+    start
+    ;;
+  force-stop)
+    force-stop
+    ;;
+  *)
+    echo "Usage: /etc/init.d/$NAME {start|stop|restart|force-stop}" >&2
+    exit 2
+    ;;
+esac
